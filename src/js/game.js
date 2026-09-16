@@ -67,27 +67,29 @@ function aligned( v ) {
   return Math.abs( v - Math.round( v ) ) < 1e-3;
 }
 
-// Una celda es muro para el actor dado?
-//   pacman: bloqueado por pared (1) y puerta (3)
-//   ghost:  bloqueado solo por pared (1)
-function isWall( grid, x, y, actor ) {
+// Una celda es muro?
+//   pared (1): siempre.
+//   puerta (3): muro para todos los que deciden con canMove (Pac-Man y
+//   fantasmas activos). Solo la cruza la ruta guionizada de salida (modo
+//   'exit'), que no consulta canMove.
+function isWall( grid, x, y ) {
   if ( y < 0 || y >= grid.length ) return true;
   if ( x < 0 || x >= grid[ 0 ].length ) return true;
   const v = grid[ y ][ x ];
   if ( v === 1 ) return true;
-  if ( v === 3 && actor === 'pacman' ) return true;
+  if ( v === 3 ) return true;
   return false;
 }
 
-// Puede el actor avanzar desde (x,y) en la direccion dir?
-function canMove( grid, x, y, dir, actor ) {
+// Puede avanzar desde (x,y) en la direccion dir?
+function canMove( grid, x, y, dir ) {
   const d = DIRS[ dir ];
   if ( !d ) return false;
   const tx = x + d.x;
   const ty = y + d.y;
   // Tunel: salir por un borde en la fila del tunel siempre es valido.
   if ( ty === TUNNEL_ROW && ( tx < 0 || tx >= grid[ 0 ].length ) ) return true;
-  return !isWall( grid, tx, ty, actor );
+  return !isWall( grid, tx, ty );
 }
 
 function wrapTunnel( a, width ) {
@@ -107,7 +109,7 @@ function movePacman( game ) {
     p.y = Math.round( p.y );
 
     // Aplicar giro pendiente si es posible.
-    if ( p.nextDir && canMove( grid, p.x, p.y, p.nextDir, 'pacman' ) ) {
+    if ( p.nextDir && canMove( grid, p.x, p.y, p.nextDir ) ) {
       p.dir = p.nextDir;
       p.nextDir = null;
     }
@@ -118,7 +120,7 @@ function movePacman( game ) {
       game.dotsRemaining--;
     }
     // Si no puede seguir, se detiene en la celda.
-    if ( !canMove( grid, p.x, p.y, p.dir, 'pacman' ) ) return;
+    if ( !canMove( grid, p.x, p.y, p.dir ) ) return;
   }
 
   const d = DIRS[ p.dir ];
@@ -127,35 +129,70 @@ function movePacman( game ) {
   wrapTunnel( p, width );
 }
 
+// Direccion preferida a igual distancia: up > left > down > right (arcade).
+const DIR_PRIORITY = [ 'up', 'left', 'down', 'right' ];
+
+// Celda objetivo del fantasma: su esquina en scatter, su personalidad en chase.
+// Los objetivos son celdas de navegacion, pueden quedar fuera del laberinto.
+function ghostTarget( game, g ) {
+  const p = game.pacman;
+  const px = Math.round( p.x );
+  const py = Math.round( p.y );
+
+  if ( game.mode.phase === 'scatter' ) return g.scatter;
+
+  if ( g.kind === 'blinky' ) {
+    // Agresivo: la celda de Pac-Man.
+    return { x: px, y: py };
+  }
+
+  if ( g.kind === 'pinky' ) {
+    // Emboscada: 4 celdas delante de Pac-Man segun su direccion actual
+    // (sin replicar el bug del arcade original con la direccion up).
+    const d = DIRS[ p.dir ];
+    return { x: px + d.x * 4, y: py + d.y * 4 };
+  }
+
+  if ( g.kind === 'inky' ) {
+    // Flanqueo: pivote = 2 celdas delante de Pac-Man;
+    // objetivo = 2*pivote - posicion de blinky.
+    const d = DIRS[ p.dir ];
+    const b = game.ghosts.find( ( gh ) => gh.kind === 'blinky' );
+    return {
+      x: 2 * ( px + d.x * 2 ) - Math.round( b.x ),
+      y: 2 * ( py + d.y * 2 ) - Math.round( b.y ),
+    };
+  }
+
+  // clyde, timido: persigue de lejos (> 8 celdas); de cerca, su esquina.
+  const dist = Math.abs( Math.round( g.x ) - px ) + Math.abs( Math.round( g.y ) - py );
+  return dist > 8 ? { x: px, y: py } : g.scatter;
+}
+
+// IA por celda objetivo: en cada celda alineada, la direccion transitable
+// (sin invertir) que minimiza la distancia Manhattan al objetivo. A igual
+// distancia gana up > left > down > right. En callejon sin salida, giro de 180.
 function decideGhost( game, g ) {
   const grid = game.grid;
-  const p = game.pacman;
+  const target = ghostTarget( game, g );
 
-  const options = Object.keys( DIRS ).filter(
-    ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir, 'ghost' )
+  const options = DIR_PRIORITY.filter(
+    ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir )
   );
   // Sin salida (callejon): permitir el giro de 180.
-  const choices = options.length ? options : [ '' + OPPOSITE[ g.dir ] ];
+  const choices = options.length ? options : [ OPPOSITE[ g.dir ] ];
 
-  if ( g.kind === 'hunter' ) {
-    const px = Math.round( p.x );
-    const py = Math.round( p.y );
-    let best = choices[ 0 ];
-    let bestDist = Infinity;
-    for ( const dir of choices ) {
-      const d = DIRS[ dir ];
-      const nx = g.x + d.x;
-      const ny = g.y + d.y;
-      const dist = Math.abs( nx - px ) + Math.abs( ny - py );
-      if ( dist < bestDist ) {
-        bestDist = dist;
-        best = dir;
-      }
+  let best = choices[ 0 ];
+  let bestDist = Infinity;
+  for ( const dir of choices ) {
+    const d = DIRS[ dir ];
+    const dist = Math.abs( g.x + d.x - target.x ) + Math.abs( g.y + d.y - target.y );
+    if ( dist < bestDist ) {
+      bestDist = dist;
+      best = dir;
     }
-    g.dir = best;
-  } else {
-    g.dir = choices[ Math.floor( Math.random() * choices.length ) ];
   }
+  g.dir = best;
 }
 
 function moveGhost( game, g ) {
@@ -166,7 +203,7 @@ function moveGhost( game, g ) {
     g.x = Math.round( g.x );
     g.y = Math.round( g.y );
     decideGhost( game, g );
-    if ( !canMove( grid, g.x, g.y, g.dir, 'ghost' ) ) return;
+    if ( !canMove( grid, g.x, g.y, g.dir ) ) return;
   }
 
   const d = DIRS[ g.dir ];
@@ -267,7 +304,28 @@ function collides( a, b ) {
   return Math.abs( a.x - b.x ) < 0.5 && Math.abs( a.y - b.y ) < 0.5;
 }
 
+// Temporizador global de fases: scatter 420 / chase 1200 frames, 4 ciclos
+// y a partir de ahi chase permanente.
+function updateMode( game ) {
+  const m = game.mode;
+  m.timerFrames--;
+  if ( m.timerFrames > 0 ) return;
+  if ( m.phase === 'scatter' ) {
+    m.phase = 'chase';
+    m.timerFrames = CHASE_FRAMES;
+  } else {
+    m.cycle++;
+    if ( m.cycle >= MAX_CYCLES ) {
+      m.timerFrames = Infinity; // tras 4 ciclos: chase permanente
+    } else {
+      m.phase = 'scatter';
+      m.timerFrames = SCATTER_FRAMES;
+    }
+  }
+}
+
 function update( game ) {
+  updateMode( game );
   movePacman( game );
   game.ghosts.forEach( ( g ) => updateGhost( game, g ) );
 
