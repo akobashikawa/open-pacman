@@ -13,8 +13,10 @@ const OPPOSITE = { left: 'right', right: 'left', up: 'down', down: 'up' };
 const PACMAN_SPEED = 0.125; // 1/8 celda/frame -> alinea cada 8 frames
 const GHOST_SPEED = 0.1;    // 1/10 celda/frame
 
-// Salida escalonada de la guarida, en frames de juego desde el inicio.
-const EXIT_DELAY_FRAMES = { blinky: 0, pinky: 120, inky: 360, clyde: 540 };
+// Salida al iniciar la partida: intervalos de 2.5 s = 150 frames a 60 fps.
+const EXIT_DELAY_FRAMES_START = { blinky: 0, pinky: 150, inky: 300, clyde: 450 };
+// Salida tras perder una vida: valores de SPEC 01, sin cambio.
+const EXIT_DELAY_FRAMES_RESPAWN = { blinky: 0, pinky: 120, inky: 360, clyde: 540 };
 
 // Fases globales scatter/chase, en frames (4 ciclos, luego chase permanente).
 const SCATTER_FRAMES = 420;
@@ -57,7 +59,7 @@ function createGame() {
       scatter: g.scatter,
       mode: 'pen',        // 'pen' | 'exit' | 'active'
       bobDir: -1,         // +/-1, solo usado en 'pen'
-      exitDelayFrames: EXIT_DELAY_FRAMES[ g.kind ],
+      exitDelayFrames: EXIT_DELAY_FRAMES_START[ g.kind ],
     } ) ),
     mode: { phase: 'scatter', timerFrames: SCATTER_FRAMES, cycle: 0 },
   };
@@ -295,7 +297,7 @@ function resetPositions( game ) {
     g.dir = 'left';
     g.mode = 'pen';
     g.bobDir = -1;
-    g.exitDelayFrames = EXIT_DELAY_FRAMES[ GHOST_STARTS[ i ].kind ];
+    g.exitDelayFrames = EXIT_DELAY_FRAMES_RESPAWN[ GHOST_STARTS[ i ].kind ];
   } );
   game.mode = { phase: 'scatter', timerFrames: SCATTER_FRAMES, cycle: 0 };
 }
