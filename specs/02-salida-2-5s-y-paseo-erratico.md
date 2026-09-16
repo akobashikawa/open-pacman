@@ -1,6 +1,6 @@
 # SPEC 02 — Salida cada 2.5 s al iniciar y paseo errático en la guarida
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** SPEC 01
 > **Fecha:** 2026-09-16
 > **Objetivo:** Al iniciar la partida los tres fantasmas de la guarida deambulan de forma errática por su interior y salen a intervalos de 2.5 s (2.5 / 5 / 7.5 s), conservándose tras perder una vida los tiempos de salida de SPEC 01 (2 / 6 / 9 s).
