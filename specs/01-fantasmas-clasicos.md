@@ -1,6 +1,6 @@
 # SPEC 01 — Los cuatro fantasmas clásicos con IA propia
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** ninguno
 > **Fecha:** 2026-09-16
 > **Objetivo:** Sustituir los 2 fantasmas actuales por los 4 clásicos (Blinky, Pinky, Inky y Clyde), cada uno con su IA de persecución por celda objetivo, fases globales scatter/chase y salida escalonada de la guarida.
