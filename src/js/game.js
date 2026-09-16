@@ -58,7 +58,6 @@ function createGame() {
       kind: g.kind,
       scatter: g.scatter,
       mode: 'pen',        // 'pen' | 'exit' | 'active'
-      bobDir: -1,         // +/-1, solo usado en 'pen'
       exitDelayFrames: EXIT_DELAY_FRAMES_START[ g.kind ],
     } ) ),
     mode: { phase: 'scatter', timerFrames: SCATTER_FRAMES, cycle: 0 },
@@ -214,17 +213,21 @@ function moveGhost( game, g ) {
   wrapTunnel( g, width );
 }
 
-// pen: espera oscilando verticalmente +/-0.5 en y alrededor de su celda.
-function bobGhost( g ) {
-  g.y += g.bobDir * g.speed;
-  if ( g.bobDir < 0 && aligned( g.y + 0.5 ) ) {
-    g.y = Math.round( g.y + 0.5 ) - 0.5;
-    g.bobDir = 1;
-  } else if ( g.bobDir > 0 && aligned( g.y - 0.5 ) ) {
-    g.y = Math.round( g.y - 0.5 ) + 0.5;
-    g.bobDir = -1;
+// pen: paseo aleatorio por el interior de la guarida. En cada celda alineada
+// elige una direccion aleatoria uniforme entre las transitables por canMove
+// (la puerta cuenta como muro: nadie sale antes de su delay).
+function wanderPen( game, g ) {
+  if ( aligned( g.x ) && aligned( g.y ) ) {
+    g.x = Math.round( g.x );
+    g.y = Math.round( g.y );
+    const options = Object.keys( DIRS ).filter(
+      ( dir ) => canMove( game.grid, g.x, g.y, dir )
+    );
+    g.dir = options[ Math.floor( Math.random() * options.length ) ];
   }
-  g.dir = g.bobDir < 0 ? 'up' : 'down';
+  const d = DIRS[ g.dir ];
+  g.x += d.x * g.speed;
+  g.y += d.y * g.speed;
 }
 
 // Un paso de g.speed hacia (tx,ty) por el eje dominante, encajando al llegar
@@ -272,7 +275,7 @@ function updateGhost( game, g ) {
   if ( g.mode === 'pen' ) {
     if ( g.exitDelayFrames > 0 ) {
       g.exitDelayFrames--;
-      bobGhost( g );
+      wanderPen( game, g );
     } else {
       g.mode = 'exit';
     }
@@ -296,7 +299,6 @@ function resetPositions( game ) {
     g.y = GHOST_STARTS[ i ].y;
     g.dir = 'left';
     g.mode = 'pen';
-    g.bobDir = -1;
     g.exitDelayFrames = EXIT_DELAY_FRAMES_RESPAWN[ GHOST_STARTS[ i ].kind ];
   } );
   game.mode = { phase: 'scatter', timerFrames: SCATTER_FRAMES, cycle: 0 };
