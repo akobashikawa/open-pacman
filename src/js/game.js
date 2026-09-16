@@ -13,6 +13,18 @@ const OPPOSITE = { left: 'right', right: 'left', up: 'down', down: 'up' };
 const PACMAN_SPEED = 0.125; // 1/8 celda/frame -> alinea cada 8 frames
 const GHOST_SPEED = 0.1;    // 1/10 celda/frame
 
+// Salida escalonada de la guarida, en frames de juego desde el inicio.
+const EXIT_DELAY_FRAMES = { blinky: 0, pinky: 120, inky: 360, clyde: 540 };
+
+// Fases globales scatter/chase, en frames (4 ciclos, luego chase permanente).
+const SCATTER_FRAMES = 420;
+const CHASE_FRAMES = 1200;
+const MAX_CYCLES = 4;
+
+// Geometria fija de la ruta de salida (espeja GHOST_STARTS en maze.js).
+const PEN_CENTER = { x: 13, y: 14 }; // centro de la guarida: alineacion previa
+const PEN_EXIT = { x: 13, y: 11 };   // sobre la puerta: final de la salida
+
 // Crea una partida nueva. Copia MAZE (pristino) a game.grid para poder comer
 // dots sin destruir el original, y reiniciar.
 function createGame() {
@@ -39,10 +51,15 @@ function createGame() {
     ghosts: GHOST_STARTS.map( ( g ) => ( {
       x: g.x,
       y: g.y,
-      dir: 'up',
+      dir: 'left',
       speed: GHOST_SPEED,
       kind: g.kind,
+      scatter: g.scatter,
+      mode: 'pen',        // 'pen' | 'exit' | 'active'
+      bobDir: -1,         // +/-1, solo usado en 'pen'
+      exitDelayFrames: EXIT_DELAY_FRAMES[ g.kind ],
     } ) ),
+    mode: { phase: 'scatter', timerFrames: SCATTER_FRAMES, cycle: 0 },
   };
 }
 
@@ -158,6 +175,77 @@ function moveGhost( game, g ) {
   wrapTunnel( g, width );
 }
 
+// pen: espera oscilando verticalmente +/-0.5 en y alrededor de su celda.
+function bobGhost( g ) {
+  g.y += g.bobDir * g.speed;
+  if ( g.bobDir < 0 && aligned( g.y + 0.5 ) ) {
+    g.y = Math.round( g.y + 0.5 ) - 0.5;
+    g.bobDir = 1;
+  } else if ( g.bobDir > 0 && aligned( g.y - 0.5 ) ) {
+    g.y = Math.round( g.y - 0.5 ) + 0.5;
+    g.bobDir = -1;
+  }
+  g.dir = g.bobDir < 0 ? 'up' : 'down';
+}
+
+// Un paso de g.speed hacia (tx,ty) por el eje dominante, encajando al llegar
+// para evitar derivas de coma flotante. true si ya esta en el destino.
+function stepToward( g, tx, ty ) {
+  const dx = tx - g.x;
+  const dy = ty - g.y;
+  if ( Math.abs( dx ) < 1e-3 && Math.abs( dy ) < 1e-3 ) {
+    g.x = tx;
+    g.y = ty;
+    return true;
+  }
+  if ( Math.abs( dx ) > Math.abs( dy ) ) {
+    g.x += Math.sign( dx ) * g.speed;
+    g.dir = dx > 0 ? 'right' : 'left';
+    if ( Math.abs( tx - g.x ) < 1e-3 ) g.x = tx;
+  } else {
+    g.y += Math.sign( dy ) * g.speed;
+    g.dir = dy > 0 ? 'down' : 'up';
+    if ( Math.abs( ty - g.y ) < 1e-3 ) g.y = ty;
+  }
+  return false;
+}
+
+// exit: ruta guionizada. Alinearse en la columna 13, subir hasta el centro
+// (fila 14) si se encuentra por debajo, y luego recto hasta (13,11).
+function exitGhost( g ) {
+  if ( Math.abs( g.x - PEN_CENTER.x ) > 1e-3 ) {
+    stepToward( g, PEN_CENTER.x, g.y );
+    return;
+  }
+  g.x = PEN_CENTER.x;
+  if ( g.y > PEN_CENTER.y + 1e-3 ) {
+    stepToward( g, PEN_CENTER.x, PEN_CENTER.y );
+    return;
+  }
+  if ( stepToward( g, PEN_EXIT.x, PEN_EXIT.y ) ) {
+    g.mode = 'active';
+    g.dir = 'left';
+  }
+}
+
+// Maquina de estados por fantasma: pen -> exit -> active.
+function updateGhost( game, g ) {
+  if ( g.mode === 'pen' ) {
+    if ( g.exitDelayFrames > 0 ) {
+      g.exitDelayFrames--;
+      bobGhost( g );
+    } else {
+      g.mode = 'exit';
+    }
+    return;
+  }
+  if ( g.mode === 'exit' ) {
+    exitGhost( g );
+    return;
+  }
+  moveGhost( game, g );
+}
+
 function resetPositions( game ) {
   const p = game.pacman;
   p.x = PACMAN_START.x;
@@ -167,8 +255,12 @@ function resetPositions( game ) {
   game.ghosts.forEach( ( g, i ) => {
     g.x = GHOST_STARTS[ i ].x;
     g.y = GHOST_STARTS[ i ].y;
-    g.dir = 'up';
+    g.dir = 'left';
+    g.mode = 'pen';
+    g.bobDir = -1;
+    g.exitDelayFrames = EXIT_DELAY_FRAMES[ GHOST_STARTS[ i ].kind ];
   } );
+  game.mode = { phase: 'scatter', timerFrames: SCATTER_FRAMES, cycle: 0 };
 }
 
 function collides( a, b ) {
@@ -177,7 +269,7 @@ function collides( a, b ) {
 
 function update( game ) {
   movePacman( game );
-  game.ghosts.forEach( ( g ) => moveGhost( game, g ) );
+  game.ghosts.forEach( ( g ) => updateGhost( game, g ) );
 
   for ( const g of game.ghosts ) {
     if ( collides( game.pacman, g ) ) {
