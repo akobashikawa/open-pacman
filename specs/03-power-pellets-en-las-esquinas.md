@@ -1,6 +1,6 @@
 # SPEC 03 — Power pellets en las cuatro esquinas
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** ninguno
 > **Fecha:** 2026-09-17
 > **Objetivo:** Colocar 4 power pellets en las esquinas clásicas del laberinto, visibles como círculos grandes parpadeantes y comibles por 50 puntos, sin modo asustado.
