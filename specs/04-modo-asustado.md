@@ -1,6 +1,6 @@
 # SPEC 04 — Modo asustado: fantasmas azules y comestibles
 
-> **Estado:** Aprobado
+> **Estado:** Implementado
 > **Depende de:** SPEC 01, SPEC 02, SPEC 03
 > **Fecha:** 2026-09-23
 > **Objetivo:** Al comer un power pellet los cuatro fantasmas pasan a un modo asustado temporal (azules, erráticos, lentos y comestibles), regresan a la guarida como ojos al ser comidos otorgando 200/400/800/1600 puntos en cadena, y reviven para volver a salir.

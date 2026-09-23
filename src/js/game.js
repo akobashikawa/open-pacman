@@ -420,21 +420,28 @@ function update( game ) {
   movePacman( game );
   game.ghosts.forEach( ( g ) => updateGhost( game, g ) );
 
-  // Colisiones: primero la comida (un asustado se come y no mata), luego
-  // la muerte. Los ojos (eaten) no colisionan nunca.
+  // Colisiones: primero la comida (un asustado se come y no mata). Si hubo
+  // comida, la muerte no se evalua ese frame: la comida prevalece, como la
+  // congelacion del arcade. Los ojos (eaten) no colisionan nunca.
+  let eatenThisFrame = false;
   for ( const g of game.ghosts ) {
-    if ( g.frightened && collides( game.pacman, g ) ) eatGhost( game, g );
+    if ( g.frightened && collides( game.pacman, g ) ) {
+      eatGhost( game, g );
+      eatenThisFrame = true;
+    }
   }
-  for ( const g of game.ghosts ) {
-    if ( g.frightened || g.mode === 'eaten' ) continue;
-    if ( collides( game.pacman, g ) ) {
-      game.lives--;
-      if ( game.lives <= 0 ) {
-        game.state = 'lost';
-        return;
+  if ( !eatenThisFrame ) {
+    for ( const g of game.ghosts ) {
+      if ( g.frightened || g.mode === 'eaten' ) continue;
+      if ( collides( game.pacman, g ) ) {
+        game.lives--;
+        if ( game.lives <= 0 ) {
+          game.state = 'lost';
+          return;
+        }
+        resetPositions( game );
+        break;
       }
-      resetPositions( game );
-      break;
     }
   }
 
