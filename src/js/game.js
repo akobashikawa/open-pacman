@@ -65,7 +65,7 @@ function createGame() {
       speed: GHOST_SPEED,
       kind: g.kind,
       scatter: g.scatter,
-      mode: 'pen',        // 'pen' | 'exit' | 'active'
+      mode: 'pen',        // 'pen' | 'exit' | 'active' | 'eaten'
       exitDelayFrames: EXIT_DELAY_FRAMES_START[ g.kind ],
       frightened: false,  // true mientras dura el modo asustado sin ser comido
     } ) ),
@@ -80,27 +80,28 @@ function aligned( v ) {
 
 // Una celda es muro?
 //   pared (1): siempre.
-//   puerta (3): muro para todos los que deciden con canMove (Pac-Man y
-//   fantasmas activos). Solo la cruza la ruta guionizada de salida (modo
-//   'exit'), que no consulta canMove.
-function isWall( grid, x, y ) {
+//   puerta (3): muro para todos los que deciden con canMove (Pac-Man,
+//   paseos y activos). Solo la cruzan la ruta guionizada de salida (modo
+//   'exit', que no consulta canMove) y los ojos (modo 'eaten', con
+//   allowDoor).
+function isWall( grid, x, y, allowDoor ) {
   if ( y < 0 || y >= grid.length ) return true;
   if ( x < 0 || x >= grid[ 0 ].length ) return true;
   const v = grid[ y ][ x ];
   if ( v === 1 ) return true;
-  if ( v === 3 ) return true;
+  if ( v === 3 ) return !allowDoor;
   return false;
 }
 
 // Puede avanzar desde (x,y) en la direccion dir?
-function canMove( grid, x, y, dir ) {
+function canMove( grid, x, y, dir, allowDoor ) {
   const d = DIRS[ dir ];
   if ( !d ) return false;
   const tx = x + d.x;
   const ty = y + d.y;
   // Tunel: salir por un borde en la fila del tunel siempre es valido.
   if ( ty === TUNNEL_ROW && ( tx < 0 || tx >= grid[ 0 ].length ) ) return true;
-  return !isWall( grid, tx, ty );
+  return !isWall( grid, tx, ty, allowDoor );
 }
 
 function wrapTunnel( a, width ) {
@@ -185,12 +186,14 @@ function ghostTarget( game, g ) {
 // IA por celda objetivo: en cada celda alineada, la direccion transitable
 // (sin invertir) que minimiza la distancia Manhattan al objetivo. A igual
 // distancia gana up > left > down > right. En callejon sin salida, giro de 180.
+// Los ojos (eaten) apuntan siempre al centro de la guarida y cruzan la puerta.
 function decideGhost( game, g ) {
   const grid = game.grid;
-  const target = ghostTarget( game, g );
+  const eaten = g.mode === 'eaten';
+  const target = eaten ? PEN_CENTER : ghostTarget( game, g );
 
   const options = DIR_PRIORITY.filter(
-    ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir )
+    ( dir ) => dir !== OPPOSITE[ g.dir ] && canMove( grid, g.x, g.y, dir, eaten )
   );
   // Sin salida (callejon): permitir el giro de 180.
   const choices = options.length ? options : [ OPPOSITE[ g.dir ] ];
@@ -211,15 +214,22 @@ function decideGhost( game, g ) {
 function moveGhost( game, g ) {
   const grid = game.grid;
   const width = grid[ 0 ].length;
+  const eaten = g.mode === 'eaten';
 
   if ( aligned( g.x ) && aligned( g.y ) ) {
     g.x = Math.round( g.x );
     g.y = Math.round( g.y );
+    // Ojos en el centro de la guarida: revivir y salir de nuevo por exit.
+    if ( eaten && g.x === PEN_CENTER.x && g.y === PEN_CENTER.y ) {
+      g.mode = 'exit';
+      g.speed = GHOST_SPEED;
+      return;
+    }
     // Asustado: paseo aleatorio uniforme (patron de la guarida) en vez de
     // la IA por celda objetivo; reversiones permitidas.
     if ( g.frightened ) g.dir = randomDir( grid, g );
     else decideGhost( game, g );
-    if ( !canMove( grid, g.x, g.y, g.dir ) ) return;
+    if ( !canMove( grid, g.x, g.y, g.dir, eaten ) ) return;
   }
 
   const d = DIRS[ g.dir ];
@@ -294,7 +304,9 @@ function exitGhost( g ) {
   }
 }
 
-// Maquina de estados por fantasma: pen -> exit -> active.
+// Maquina de estados por fantasma: pen -> exit -> active -> eaten -> exit
+// (los ojos reviven en la guarida y re-salen). 'active' y 'eaten' comparten
+// moveGhost; la decision de direccion difiere dentro.
 function updateGhost( game, g ) {
   if ( g.mode === 'pen' ) {
     if ( g.exitDelayFrames > 0 ) {
@@ -384,6 +396,23 @@ function updateFrightened( game ) {
   }
 }
 
+// Comer un fantasma asustado: puntos de la cadena (200/400/800/1600),
+// modo eaten (ojos) y vuelta a la guarida. El snap a la celda mas cercana
+// es necesario: con EYES_SPEED 0.2 un desfase de 0.05 nunca vuelve a
+// alinear y los ojos se perderian atravesando paredes.
+function eatGhost( game, g ) {
+  const f = game.frightened;
+  game.score += GHOST_POINTS[ f.chain ];
+  f.chain = Math.min( f.chain + 1, GHOST_POINTS.length - 1 );
+  g.frightened = false;
+  g.mode = 'eaten';
+  g.speed = EYES_SPEED;
+  // El salto (<= media celda) coincide con la desaparicion del cuerpo.
+  g.x = Math.round( g.x );
+  g.y = Math.round( g.y );
+  wrapTunnel( g, game.grid[ 0 ].length );
+}
+
 function update( game ) {
   // Durante el modo asustado las fases scatter/chase quedan en pausa.
   if ( game.frightened ) updateFrightened( game );
@@ -391,7 +420,13 @@ function update( game ) {
   movePacman( game );
   game.ghosts.forEach( ( g ) => updateGhost( game, g ) );
 
+  // Colisiones: primero la comida (un asustado se come y no mata), luego
+  // la muerte. Los ojos (eaten) no colisionan nunca.
   for ( const g of game.ghosts ) {
+    if ( g.frightened && collides( game.pacman, g ) ) eatGhost( game, g );
+  }
+  for ( const g of game.ghosts ) {
+    if ( g.frightened || g.mode === 'eaten' ) continue;
     if ( collides( game.pacman, g ) ) {
       game.lives--;
       if ( game.lives <= 0 ) {

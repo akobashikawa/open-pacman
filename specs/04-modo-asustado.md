@@ -113,6 +113,7 @@ const FRIGHTENED_FLASH_COLOR = '#ffffff'; // fase de aviso del final
 - **Sí:** pausar `updateMode` durante el modo. Como el arcade; evita cambios de fase invisibles para el jugador.
 - **Sí:** segundo pellet reinicia tiempo y cadena. Como el arcade; evita cadenas de 1600 gratis al solapar pellets.
 - **Sí:** resolver la comida antes que la muerte en un mismo frame. El arcade congela al comer, así que la muerte nunca gana esa carrera.
+- **Sí:** snap a la celda más cercana al comer un fantasma. Corrige la mitigación original de la tabla de riesgos (un desfase de 0.05 con `EYES_SPEED` 0.2 nunca vuelve a alinear); decidido con el usuario durante la implementación.
 - **No:** teletransporte a la guarida al ser comido. Pierde el viaje de los ojos, que es la mitad del show.
 - **No:** huir de Pac-Man con la IA de celda objetivo. El paseo aleatorio es el arcade y reutiliza código existente.
 - **No:** puntuación fija de 200. La cadena duplicadora es el comportamiento clásico apuntado desde SPEC 03.
@@ -126,7 +127,7 @@ const FRIGHTENED_FLASH_COLOR = '#ffffff'; // fase de aviso del final
 | ------ | ---------- |
 | `requestAnimationFrame` no es paso fijo: en pantallas de ~120 Hz los 6 s nominales se cumplen en ~3 s reales. | Preexistente y aceptado desde SPEC 01; el paso fijo sigue fuera de alcance. |
 | La IA de ojos (greedy Manhattan sin reversión) no es el camino más corto y puede dar rodeos. | Es el mismo mecanismo que ya usan los activos (fiel al arcade); siempre converge al objetivo y `EYES_SPEED` lo hace rápido. |
-| Comer un fantasma en `exit` (a mitad de puerta) deja a los ojos partiendo de una posición no alineada. | `moveGhost`/`decideGhost` solo deciden en celda alineada: avanza en su dirección actual hasta alinear y luego decide; sin caso especial. |
+| Comer un fantasma a mitad de celda (casi siempre, por el umbral 0.5 de colisión) deja a los ojos con un desfase de 0.05 que el paso 0.2 nunca realinea: decidirían una sola vez y se perderían atravesando paredes. | `eatGhost` hace snap a la celda más cercana (`Math.round` + `wrapTunnel`); el salto (≤ media celda) queda enmascarado por la desaparición del cuerpo y desde el desfase 0 el paso 0.2 alinea cada 5 frames. |
 | Fantasmas asustados y ojos solapándose con otros (sin colisión fantasma-fantasma). | Ya ocurre hoy con los activos (anotado en SPEC 01); no se considera bug. |
 
 ## Qué **no** entra en este spec
