@@ -23,6 +23,13 @@ const SCATTER_FRAMES = 420;
 const CHASE_FRAMES = 1200;
 const MAX_CYCLES = 4;
 
+// Modo asustado (power pellets), nivel 1 del arcade.
+const FRIGHTENED_FRAMES = 360;       // 6 s a 60 fps
+const FRIGHTENED_FLASH_FRAMES = 120; // ultimos ~2 s: parpadeo azul/blanco
+const FRIGHTENED_SPEED = 0.05;       // mitad de GHOST_SPEED
+const EYES_SPEED = 0.2;              // doble de GHOST_SPEED
+const GHOST_POINTS = [ 200, 400, 800, 1600 ];
+
 // Geometria fija de la ruta de salida (espeja GHOST_STARTS en maze.js).
 const PEN_CENTER = { x: 13, y: 14 }; // centro de la guarida: alineacion previa
 const PEN_EXIT = { x: 13, y: 11 };   // sobre la puerta: final de la salida
@@ -60,8 +67,10 @@ function createGame() {
       scatter: g.scatter,
       mode: 'pen',        // 'pen' | 'exit' | 'active'
       exitDelayFrames: EXIT_DELAY_FRAMES_START[ g.kind ],
+      frightened: false,  // true mientras dura el modo asustado sin ser comido
     } ) ),
     mode: { phase: 'scatter', timerFrames: SCATTER_FRAMES, cycle: 0 },
+    frightened: null,     // modo asustado activo: { framesLeft, chain }
   };
 }
 
@@ -115,12 +124,13 @@ function movePacman( game ) {
       p.dir = p.nextDir;
       p.nextDir = null;
     }
-    // Comer dot (10) o power pellet (50).
+    // Comer dot (10) o power pellet (50). El pellet activa el modo asustado.
     const v = grid[ p.y ][ p.x ];
     if ( v === 2 || v === 4 ) {
       grid[ p.y ][ p.x ] = 0;
       game.score += v === 4 ? 50 : 10;
       game.dotsRemaining--;
+      if ( v === 4 ) startFrightened( game );
     }
     // Si no puede seguir, se detiene en la celda.
     if ( !canMove( grid, p.x, p.y, p.dir ) ) return;
@@ -269,6 +279,8 @@ function exitGhost( g ) {
   if ( stepToward( g, PEN_EXIT.x, PEN_EXIT.y ) ) {
     g.mode = 'active';
     g.dir = 'left';
+    // Sale a velocidad asustada si el modo sigue activo; normal en el resto.
+    g.speed = g.frightened ? FRIGHTENED_SPEED : GHOST_SPEED;
   }
 }
 
@@ -301,9 +313,12 @@ function resetPositions( game ) {
     g.y = GHOST_STARTS[ i ].y;
     g.dir = 'left';
     g.mode = 'pen';
+    g.frightened = false;
+    g.speed = GHOST_SPEED;
     g.exitDelayFrames = EXIT_DELAY_FRAMES_RESPAWN[ GHOST_STARTS[ i ].kind ];
   } );
   game.mode = { phase: 'scatter', timerFrames: SCATTER_FRAMES, cycle: 0 };
+  game.frightened = null; // perder la vida limpia el modo asustado
 }
 
 function collides( a, b ) {
@@ -330,8 +345,39 @@ function updateMode( game ) {
   }
 }
 
+// Activar el modo asustado: timer y cadena globales nuevos (un segundo
+// pellet reinicia ambos) y flag por fantasma. Los activos invierten su
+// direccion al instante y pasan a velocidad asustada; pen/exit solo se
+// marcan (la velocidad se decide al terminar su salida).
+function startFrightened( game ) {
+  game.frightened = { framesLeft: FRIGHTENED_FRAMES, chain: 0 };
+  for ( const g of game.ghosts ) {
+    if ( g.mode === 'eaten' ) continue; // los ojos no se re-asustan
+    g.frightened = true;
+    if ( g.mode === 'active' ) {
+      g.dir = OPPOSITE[ g.dir ];
+      g.speed = FRIGHTENED_SPEED;
+    }
+  }
+}
+
+// Temporizador global del modo asustado. Al expirar se apaga el flag de
+// todos y la velocidad vuelve a GHOST_SPEED solo en los activos (los ojos
+// conservan EYES_SPEED hasta revivir en la guarida).
+function updateFrightened( game ) {
+  game.frightened.framesLeft--;
+  if ( game.frightened.framesLeft > 0 ) return;
+  game.frightened = null;
+  for ( const g of game.ghosts ) {
+    g.frightened = false;
+    if ( g.mode === 'active' ) g.speed = GHOST_SPEED;
+  }
+}
+
 function update( game ) {
-  updateMode( game );
+  // Durante el modo asustado las fases scatter/chase quedan en pausa.
+  if ( game.frightened ) updateFrightened( game );
+  else updateMode( game );
   movePacman( game );
   game.ghosts.forEach( ( g ) => updateGhost( game, g ) );
 
