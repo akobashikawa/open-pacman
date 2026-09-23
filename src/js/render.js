@@ -109,7 +109,47 @@ function drawPacman( ctx, p, frame ) {
   ctx.fill();
 }
 
-function drawGhost( ctx, g, color ) {
+// Ojos blancos con pupila mirando segun la direccion de g.
+function drawEyes( ctx, g ) {
+  const { cx, cy } = cellCenter( g.x, g.y );
+  const dir = DIRS[ g.dir ] || { x: 0, y: 0 };
+  const ex = dir.x * 1.6;
+  const ey = dir.y * 1.6;
+  for ( const off of [ -3.5, 3.5 ] ) {
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc( cx + off, cy - 1, 3, 0, Math.PI * 2 );
+    ctx.fill();
+    ctx.fillStyle = '#0000bb';
+    ctx.beginPath();
+    ctx.arc( cx + off + ex, cy - 1 + ey, 1.5, 0, Math.PI * 2 );
+    ctx.fill();
+  }
+}
+
+// Cara asustada: ojos blancos sin pupila y boca en zigzag.
+function drawScaredFace( ctx, g ) {
+  const { cx, cy } = cellCenter( g.x, g.y );
+  ctx.fillStyle = '#fff';
+  for ( const off of [ -3.5, 3.5 ] ) {
+    ctx.beginPath();
+    ctx.arc( cx + off, cy - 1, 2.5, 0, Math.PI * 2 );
+    ctx.fill();
+  }
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo( cx - 5, cy + 5 );
+  ctx.lineTo( cx - 2.5, cy + 3.5 );
+  ctx.lineTo( cx, cy + 5 );
+  ctx.lineTo( cx + 2.5, cy + 3.5 );
+  ctx.lineTo( cx + 5, cy + 5 );
+  ctx.stroke();
+}
+
+// Cuerpo de fantasma con falda ondulada. scared = true dibuja la cara
+// asustada en vez de los ojos direccionales.
+function drawGhost( ctx, g, color, scared ) {
   const { cx, cy } = cellCenter( g.x, g.y );
   const r = TILE / 2 - 1;
   const top = cy - r;
@@ -129,20 +169,8 @@ function drawGhost( ctx, g, color ) {
   ctx.closePath();
   ctx.fill();
 
-  // ojos mirando segun direccion
-  const dir = DIRS[ g.dir ] || { x: 0, y: 0 };
-  const ex = dir.x * 1.6;
-  const ey = dir.y * 1.6;
-  for ( const off of [ -3.5, 3.5 ] ) {
-    ctx.fillStyle = '#fff';
-    ctx.beginPath();
-    ctx.arc( cx + off, cy - 1, 3, 0, Math.PI * 2 );
-    ctx.fill();
-    ctx.fillStyle = '#0000bb';
-    ctx.beginPath();
-    ctx.arc( cx + off + ex, cy - 1 + ey, 1.5, 0, Math.PI * 2 );
-    ctx.fill();
-  }
+  if ( scared ) drawScaredFace( ctx, g );
+  else drawEyes( ctx, g );
 }
 
 function drawHUD( ctx, game, W ) {
@@ -162,6 +190,10 @@ const GHOST_COLOR = {
   clyde:  '#ffb852',
 };
 
+// Modo asustado: azul arcade (mismo que las paredes) y blanco de aviso.
+const FRIGHTENED_COLOR = '#2121ff';
+const FRIGHTENED_FLASH_COLOR = '#ffffff';
+
 function draw( ctx, game, frame ) {
   const grid = game.grid;
   const W = grid[ 0 ].length;
@@ -174,7 +206,23 @@ function draw( ctx, game, frame ) {
   drawDoor( ctx, grid );
   drawDots( ctx, grid, frame );
   drawPacman( ctx, game.pacman, frame );
-  game.ghosts.forEach( ( g ) => drawGhost( ctx, g, GHOST_COLOR[ g.kind ] || '#ff0000' ) );
+  // Estado por fantasma: eaten = solo ojos de regreso; frightened = azul con
+  // parpadeo blanco de aviso en los ultimos 120 frames (ritmo de 15, como
+  // los pellets; umbral FRIGHTENED_FLASH_FRAMES de game.js); resto normal.
+  game.ghosts.forEach( ( g ) => {
+    if ( g.mode === 'eaten' ) {
+      drawEyes( ctx, g );
+      return;
+    }
+    if ( g.frightened ) {
+      const flash =
+        game.frightened.framesLeft <= FRIGHTENED_FLASH_FRAMES &&
+        Math.floor( frame / 15 ) % 2 === 1;
+      drawGhost( ctx, g, flash ? FRIGHTENED_FLASH_COLOR : FRIGHTENED_COLOR, true );
+      return;
+    }
+    drawGhost( ctx, g, GHOST_COLOR[ g.kind ] || '#ff0000', false );
+  } );
   drawHUD( ctx, game, W );
 }
 
