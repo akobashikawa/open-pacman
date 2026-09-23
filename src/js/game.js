@@ -215,7 +215,10 @@ function moveGhost( game, g ) {
   if ( aligned( g.x ) && aligned( g.y ) ) {
     g.x = Math.round( g.x );
     g.y = Math.round( g.y );
-    decideGhost( game, g );
+    // Asustado: paseo aleatorio uniforme (patron de la guarida) en vez de
+    // la IA por celda objetivo; reversiones permitidas.
+    if ( g.frightened ) g.dir = randomDir( grid, g );
+    else decideGhost( game, g );
     if ( !canMove( grid, g.x, g.y, g.dir ) ) return;
   }
 
@@ -225,6 +228,16 @@ function moveGhost( game, g ) {
   wrapTunnel( g, width );
 }
 
+// Direccion aleatoria uniforme entre las transitables desde la celda de g
+// (reversiones incluidas). Patron compartido por el paseo de la guarida
+// y el deambular asustado por el laberinto.
+function randomDir( grid, g ) {
+  const options = Object.keys( DIRS ).filter(
+    ( dir ) => canMove( grid, g.x, g.y, dir )
+  );
+  return options[ Math.floor( Math.random() * options.length ) ];
+}
+
 // pen: paseo aleatorio por el interior de la guarida. En cada celda alineada
 // elige una direccion aleatoria uniforme entre las transitables por canMove
 // (la puerta cuenta como muro: nadie sale antes de su delay).
@@ -232,10 +245,7 @@ function wanderPen( game, g ) {
   if ( aligned( g.x ) && aligned( g.y ) ) {
     g.x = Math.round( g.x );
     g.y = Math.round( g.y );
-    const options = Object.keys( DIRS ).filter(
-      ( dir ) => canMove( game.grid, g.x, g.y, dir )
-    );
-    g.dir = options[ Math.floor( Math.random() * options.length ) ];
+    g.dir = randomDir( game.grid, g );
   }
   const d = DIRS[ g.dir ];
   g.x += d.x * g.speed;
